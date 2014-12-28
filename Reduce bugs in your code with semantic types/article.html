@@ -164,7 +164,7 @@ The rest of this article shows first how to implement a semantic type, and then 
     code to make creating a new semantic type nice and quick.
 </p>
 
-<h2>Creating a semantic type</h2>
+<h2>Creating a semantic type, first take</h2>
 <p>
     Before seeing how to create semantic types in general, lets create a specific semantic type: EmailAddress.
 </p>
@@ -242,7 +242,7 @@ public class EmailAddress
     That gives us the basics. Note that with this implementation, an EmailAddress cannot be changed after it has been created - it is immutable.
 </p>
 <p>
-    However, there is one more thing to implement: equaility. When you use simple strings to store email addresses,
+    However, there is one more thing to implement: equality. When you use simple strings to store email addresses,
     you expect them to be compared by value:
 </p>
 <pre>
@@ -343,6 +343,443 @@ public class EmailAddress
 #endregion
 }
 </pre>
+
+<h2>Factoring out the boilerplate</h2>
+
+<p>
+    Obviously, the EmailAddress class as it stands has lots of boilerplate that is not really specific to email addresses.
+    We'll factor this out into a base class <i>SemanticType</i>. This can then be used to quickly define lots of semantic types.
+</p>
+<p>
+    Here is what EmailAddress will look like once we're done:
+</p>
+<pre>
+    public class EmailAddress : SemanticType&lt;string, EmailAddress>
+    {
+        static EmailAddress()
+        {
+            // Set IsValid (inherited from base class) to a lambda that returns true if the given string is a valid 
+            // email address.
+            //
+            // Note that validation info must be set in the static constructor, so other code
+            // can call the static EmailAddress.IsValid method to check if a given string is a valid
+            // email address.
+            IsValid = s => 
+                Regex.IsMatch(s,
+                            @"^(?("")("".+?(?&lt;!\\)""@)|(([0-9a-z]((\.(?!\.))|[-!#\$%&'\*\+/=\?\^`\{\}\|~\w])*)(?&lt;=[0-9a-z])@))" +
+                            @"(?(\[)(\[(\d{1,3}\.){3}\d{1,3}\])|(([0-9a-z][-\w]*[0-9a-z]*\.)+[a-z0-9][\-a-z0-9]{0,22}[a-z0-9]))$",
+                            RegexOptions.IgnoreCase);
+        }
+
+        // Constructor, taking an email address. The base constructor handles validation
+        // and storage in the Value property.
+        public EmailAddress(string emailAddress) : base(emailAddress) { }
+    }
+
+</pre>
+<p>
+    Here we only specify what is EmailAddress specific, leaving the boilerplate to a base class <i>SemanticType</i>
+    (which we'll get to in the next section):
+</p>
+<ul>
+    <li>
+        The SemanticType base class will be storing the underlying value, so it needs to be qualified with the type of the underlying value
+        - in this case string.
+    </li>
+    <li>
+        SemanticType will also handle equality comparisons. To do that, it needs the type that we're defining, in this case EmailAddress.
+    </li>
+    <li>
+        It needs to know how to do validation. To enable derived classes such as EmailAddress to specify how to do validation,
+        SemanticType exposes a static property IsValid. The derived class simply assigns a 
+        <a href="http://msdn.microsoft.com/en-AU/library/bb397687.aspx" target="_blank">lambda</a>
+         to that property that takes a
+        value and returns true if the value is valid. Because IsValid is a static property, is must be set in a 
+        <a href="http://msdn.microsoft.com/en-us/library/k9x6w0hc.aspx" target="_blank">static constructor</a>.
+    </li>
+    <li>
+        Finally, the new email address needs to be passed into the constructor. The SemanticType will handle validation, etc.,
+        but to keep the C# compiler happy, we have to define a constructor in the derived class that then calls the base constructor.
+    </li>
+</ul>
+
+<p>
+    Another example is a BirthDate semantic type. This is a DateTime, except that birth dates must be in the past (unless you take advance bookings for a kindergarten)
+    and they can't be more than say 
+    <a href="http://en.wikipedia.org/wiki/List_of_the_verified_oldest_people" target="_blank">130 years</a>
+     in the past (unless you store dead people's details).
+</p>
+
+<pre>
+public class BirthDate : SemanticType&lt;DateTime, BirthDate>
+{
+    const int maxAgeForHumans = 130;
+    const int daysPerYear = 365;
+
+    static BirthDate()
+    {
+        IsValid = birthDate => {
+                    TimeSpan age = DateTime.Now - birthDate;
+                    return (age.TotalDays >= 0) && (age.TotalDays &lt; daysPerYear * maxAgeForHumans);
+                };
+    }
+
+    public BirthDate(DateTime birthDate) : base(birthDate) { }
+}
+</pre>
+
+<h2>Creating the SemanticType base class</h2>
+
+<p>
+    Lets start with the bare bones declaration:
+</p>
+<pre>
+public class SemanticType&lt;T, S>
+{
+}
+</pre>
+
+<p>
+    Add the Value property that will be used to store the underlying value. Note that is of type T, the type of the underlying value:
+</p>
+<pre>
+public class SemanticType&lt;T, S>
+{
+    public T Value { get; private set; }
+}
+</pre>
+
+<p>
+Time to add the IsValid property. Note that:
+</p>
+<ul>
+    <li>
+        It is of type <i>Func&lt;T, bool&gt;</i>. This means it contains a lambda (that is, a function)
+        that takes a value and returns a boolean. 
+    </li>
+    <li>
+        It is initialized to a lambda that always returns true.
+        So if your derived type (such as EmailAddress) doesn't set IsValid, than
+        every value will be accepted.
+    </li>
+    <li>
+        Any code can access IsValid, but only derived types can set it.
+        That way you're 100% sure that it hasn't been changed by some code somewhere in your code base.
+    </li>
+</ul>
+<pre>
+public class SemanticType&lt;T, S>
+{
+    public T Value { get; private set; }
+
+    private static Func&lt;T, bool&gt; _isValid = v =&gt; true;
+    public static Func&lt;T, bool&gt; IsValid
+    {
+        get { return _isValid; }
+        protected set { _isValid = value; }
+    }
+}
+</pre>
+
+<p>
+    Time to add the constructor. This acts as a gatekeeper by throwing an exception when the passed in value is invalid,
+    thereby ensuring that if you have a semantic type, it is always valid. Note that it uses the IsValid property that
+    we just created.
+</p>
+
+<pre>
+public class SemanticType&lt;T, S>
+{
+    public T Value { get; private set; }
+
+    private static Func&lt;T, bool&gt; _isValid = v =&gt; true;
+    public static Func&lt;T, bool&gt; IsValid
+    {
+        get { return _isValid; }
+        protected set { _isValid = value; }
+    }
+
+    protected SemanticType(T value)
+    {
+        if (!IsValid(value))
+        {
+            throw new ArgumentException(string.Format("Trying to set a {0} to {1} which is invalid", typeof(T), value));
+        }
+
+        Value = value;
+    }
+}
+</pre>
+
+<p>
+    Now we can implement the equality related code. First override the 
+    <a href="" target="_blank">Equals</a>
+    and
+    <a href="" target="_blank">GetHashCode</a>
+    methods inherited from
+    <a href="http://msdn.microsoft.com/en-us/library/system.object(v=vs.110).aspx" target="_blank">Object</a>.
+</p>
+<p>
+    The Equals method checks whether the other object is of the same type as the derived class - can't compare apples with oranges.
+    Which is why that type needs to be passed in via the type parameter S as part of the SemanticType class definition.
+</p>
+
+<pre>
+public class SemanticType&lt;T, S>
+{
+    public T Value { get; private set; }
+
+    private static Func&lt;T, bool&gt; _isValid = v =&gt; true;
+    public static Func&lt;T, bool&gt; IsValid
+    {
+        get { return _isValid; }
+        protected set { _isValid = value; }
+    }
+
+    protected SemanticType(T value)
+    {
+        if (!IsValid(value))
+        {
+            throw new ArgumentException(string.Format("Trying to set a {0} to {1} which is invalid", typeof(T), value));
+        }
+
+        Value = value;
+    }
+
+    public override bool Equals(Object obj)
+    {
+        //Check for null and compare run-time types. 
+        if ((obj == null) || (!(obj is S)))
+        {
+            return false;
+        }
+
+        return (Value.Equals(((S)obj).Value));
+    }
+
+    public override int GetHashCode()
+    {
+        return Value.GetHashCode();
+    }
+}
+</pre>
+
+<p>
+    If you tried to compile this code, it would produce an error. This is because the Equals method
+    tries to access the Value property of objects of type S, the derived type (such as EmailAddress). You and me know that 
+    that's ok, but the compiler doesn't. 
+</p>
+<p>
+    The solution is to:
+</p>
+<ol>
+    <li>
+        Define an interface that specifies the Value property;
+    </li>
+    <li>
+        Tell the compiler that type S implements that interface.
+    </li>
+</ol>
+
+<pre>
+<b>public interface IHasValue&lt;T&gt;
+{
+    T Value { get; }
+}</b>
+
+public class SemanticType&lt;T, S><b> : IHasValue&lt;T&gt; where S : IHasValue&lt;T&gt;</b>
+{
+    public T Value { get; private set; }
+
+    private static Func&lt;T, bool&gt; _isValid = v =&gt; true;
+    public static Func&lt;T, bool&gt; IsValid
+    {
+        get { return _isValid; }
+        protected set { _isValid = value; }
+    }
+
+    protected SemanticType(T value)
+    {
+        if (!IsValid(value))
+        {
+            throw new ArgumentException(string.Format("Trying to set a {0} to {1} which is invalid", typeof(T), value));
+        }
+
+        Value = value;
+    }
+
+    public override bool Equals(Object obj)
+    {
+        //Check for null and compare run-time types. 
+        if ((obj == null) || (!(obj is S)))
+        {
+            return false;
+        }
+
+        return (Value.Equals(((S)obj).Value));
+    }
+
+    public override int GetHashCode()
+    {
+        return Value.GetHashCode();
+    }
+}
+</pre>
+<p>
+    Now we can implement the 
+    <a href="http://msdn.microsoft.com/en-us/library/ms131187(v=vs.110).aspx" target="_blank">IEquatable</a>
+    interface, by implementing its Equals method.
+</p>
+<p>
+The difference with Object.Equals is that IEquatable.Equals is strongly typed.
+    This has the following advantages:
+</p>
+<ul>
+    <li>
+        You get better type checking by the compiler.
+    </li>
+    <li>
+        It makes testing for equality a bit more efficient when the underlying type is a value type, such as integer, because it prevents 
+        <a href="http://msdn.microsoft.com/en-AU/library/yz2be5wk.aspx" target="_blank">boxing</a>.
+    </li>
+</ul>
+<pre>
+public interface IHasValue&lt;T&gt;
+{
+    T Value { get; }
+}
+
+public class SemanticType&lt;T, S> : IHasValue&lt;T&gt;<b>, IEquatable&lt;S&gt;</b> where S : IHasValue&lt;T&gt;
+{
+    public T Value { get; private set; }
+
+    private static Func&lt;T, bool&gt; _isValid = v =&gt; true;
+    public static Func&lt;T, bool&gt; IsValid
+    {
+        get { return _isValid; }
+        protected set { _isValid = value; }
+    }
+
+    protected SemanticType(T value)
+    {
+        if (!IsValid(value))
+        {
+            throw new ArgumentException(string.Format("Trying to set a {0} to {1} which is invalid", typeof(T), value));
+        }
+
+        Value = value;
+    }
+
+    public override bool Equals(Object obj)
+    {
+        //Check for null and compare run-time types. 
+        if ((obj == null) || (!(obj is S)))
+        {
+            return false;
+        }
+
+        return (Value.Equals(((S)obj).Value));
+    }
+
+    public override int GetHashCode()
+    {
+        return Value.GetHashCode();
+    }
+
+    <b>public bool Equals(S other)
+    {
+        if (other == null) { return false; }
+            
+        return (Value.Equals(other.Value));
+    }</b>
+}
+</pre>
+
+<p>
+    Finally override the == and != operators:
+</p>
+
+<pre>
+public interface IHasValue&lt;T&gt;
+{
+    T Value { get; }
+}
+
+public class SemanticType&lt;T, S> : IHasValue&lt;T&gt;, IEquatable&lt;S&gt; where S : IHasValue&lt;T&gt;
+{
+    public T Value { get; private set; }
+
+    private static Func&lt;T, bool&gt; _isValid = v =&gt; true;
+    public static Func&lt;T, bool&gt; IsValid
+    {
+        get { return _isValid; }
+        protected set { _isValid = value; }
+    }
+
+    protected SemanticType(T value)
+    {
+        if (!IsValid(value))
+        {
+            throw new ArgumentException(string.Format("Trying to set a {0} to {1} which is invalid", typeof(T), value));
+        }
+
+        Value = value;
+    }
+
+    public override bool Equals(Object obj)
+    {
+        //Check for null and compare run-time types. 
+        if ((obj == null) || (!(obj is S)))
+        {
+            return false;
+        }
+
+        return (Value.Equals(((S)obj).Value));
+    }
+
+    public override int GetHashCode()
+    {
+        return Value.GetHashCode();
+    }
+
+    public bool Equals(S other)
+    {
+        if (other == null) { return false; }
+            
+        return (Value.Equals(other.Value));
+    }
+
+    <b>public static bool operator ==(SemanticType&lt;T, S&gt; a, SemanticType&lt;T, S&gt; b)
+    {
+        // If both are null, or both are same instance, return true.
+        if (System.Object.ReferenceEquals(a, b))
+        {
+            return true;
+        }
+
+        // If one is null, but not both, return false.
+        // Have to cast to object, otherwise you recursively call this == operator.
+        if (((object)a == null) || ((object)b == null))
+        {
+            return false;
+        }
+
+        // Return true if the fields match:
+        return a.Equals(b);
+    }
+
+    public static bool operator !=(SemanticType&lt;T, S&gt; a, SemanticType&lt;T, S&gt; b)
+    {
+        return !(a == b);
+    }</b>
+}
+</pre>
+
+
+
+
+
+
 
 
 
