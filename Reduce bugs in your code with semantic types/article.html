@@ -6,7 +6,7 @@
     Static typing is a great help in keeping your code bug free and maintainable. Take for example:
 </p>
 <pre>
-public int mymethod(Person person)
+public int Mymethod(Person person)
 {
     ...
 }
@@ -28,17 +28,321 @@ public int mymethod(Person person)
 </ul>
 
 <p>
-    
-    
-    
-    
-    
-    . , and you can be sure that the compiler actually checks
+    The problem is that out of the box, C# only gives you types based on the physical representation of your data in computer memory. 
+    Integers are 32 bit numbers, strings are collections of characters, etc. So the compiler won't even give you warning
+    when you wind up with this:
+</p>
+<pre>
+double d = GetDistance();
+double t = GetTemperature();
+
+... Many complicated lines further ...
+
+// Adding a temperature to a distance doesn't make sense, 
+// but the compiler won't warn you.
+double probablyWrong = d + t;
+</pre>
+<p>
+    Ok, you get use better naming here.  <i>totalDistance</i> instead of <i>d</i>.  <i>surfaceTemperature</i> instead of <i>t</i>.
+    But the compiler still won't give you machine checking, because it still doesn't know that <i>totalDistance</i> is a distance, not just a double. 
+</p>
+    <p>
+        Another example:
+    </p>
+<pre>
+/// &lt;summary>
+/// Sends an email.
+/// &lt;/summary>
+/// &lt;param name="emailAddress">
+/// ------ Hopefully this is a valid email address -------
+/// But there is no way to be sure. We could be getting anything here really.
+/// 
+/// If someone passes a phone number by mistake, the compiler will
+/// happily compile this, and we'll get a run time exception. Happy debugging.
+/// &lt;/param>
+/// &lt;param name="message">
+/// Message to send.
+/// &lt;/param>
+public void SendEmail(string emailAddress, string message)
+{
+}
+</pre>    
+<p>
+    The problem is that we're telling the compiler that the method can take 
+    any string as the email address, while actually it can only take a valid email address, which is very different.
+</p>
+<p>
+    The solution to these issues is to tell the compiler about our domain - distance, temperatures, email addresses, etc. That way, it can
+    catch more bugs for us. This is where semantic typing comes in. 
 </p>
 
+<h2>Semantic Types</h2>
+<p>
+    Imagine that C# included a type <i>EmailAddress</i> that can only contain a valid email address:
+</p>
+<pre>
+// Constructor throws exception if passed in email address is invalid
+var validEmailAddress = new EmailAddress("kjones@megacorp.com");
 
+var validEmailAddress2 = new EmailAddress("not a valid email address"); // throws exception
+</pre>
+<p>
+    Now we can guarantee that we only pass valid email addresses to the SendEmail method:
+</p>
 
+<pre>
+// emailAddress will always contain a valid email address
+public void SendEmail(EmailAddress emailAddress, string message)
+{
+}
 
+...
+
+SendEmail(validEmailAddress, "message"); // can only pass an valid email address
+</pre>
+<p>
+    To prevent needless exception handling, have a static <i>IsValid</i> method 
+    to allow code to check whether an email address is valid:
+</p>
+<pre>
+bool isValidEmailAddress = EmailAddress.IsValid("kjones@megacorp.com"); // true
+bool isValidEmailAddress2 = EmailAddress.IsValid("not a valid email address"); // false
+</pre>
+<p>
+    Finally, we need a <i>Value</i> property to retrieve the underlying string value.
+    This is read-only, to ensure that after the EmailAddress has been created, it is 
+    immutable (cannot be changed).
+</p>
+<pre>
+var validEmailAddress = new EmailAddress("kjones@megacorp.com");
+
+string emailAddressString = validEmailAddress.Value; // "kjones@megacorp.com"
+</pre>
+
+<p>
+    The <i>EmailAddress</i> type is an example of a semantic type:
+</p>
+<ul>
+    <li>
+    <b>Type based on meaning, not on physical storage</b>:
+        An EmailAddress is physically still a string.
+        What makes it different is the way we think of that string - not as just any string but as an email address.
+    </li>
+    <li>
+    <b>Type safe</b>:
+Having a distinct EmailAddress type enables the        
+compiler to ensures you can't mistakenly use a common string where a valid email address is expected -
+        just as the compiler stops you from using a string where an integer is expected.
+    </li>
+    <li>
+    <b>Guaranteed to be valid</b>:
+
+    Because you can't create an EmailAddress based on an invalid email address,
+        and you can't change it after it has been created,
+        you know for sure that every EmaillAddress has a valid email address.
+    </li>
+    <li>
+    <b>Documentation</b>:
+        When you see a parameter of type EmailAddress, you know right away it contain an email address,
+        even if the parameter name is unclear.
+    </li>
+</ul>
+
+<p>
+    Besides an EmailAddress type, you could have a ZipCode type, a PhoneNumber type, etc.
+    Later on we'll extend this much further, with for example amounts that are quailified by a currency, so you don't mistakenly add
+    US Dollars to British Pounds.
+</p>
+
+<p>
+    Semantic typing is obviously useful, but many people do not use this approach because they fear that introducing
+    semantic types (EmailAddress, PhoneNumber, Distance, Temperature, etc.) involves lots of typing and boilerplate.
+</p>
+
+<p>
+The rest of this article shows first how to implement a semantic type, and then how to factor out all the common
+    code to make creating a new semantic type nice and quick.
+</p>
+
+<h2>Creating a semantic type</h2>
+<p>
+    Before seeing how to create semantic types in general, lets create a specific semantic type: EmailAddress.
+</p>
+<p>
+    Seeing that an EmailAddress is physically a string, you might be tempted to inherit from string:
+</p>
+<pre>
+// Doesn't compile
+public class EmailAddress: string
+{
+}
+</pre>
+<p>
+    However, this doesn't compile, because string is sealed, so you cannot derive from it. The same goes for int, double, etc.
+    You can't even inherit from DateTime.
+</p>
+
+<p>
+    So, we'll store the string value inside the EmailAddress class. Note that the setter is private. That way, it cannot be set
+    from outside the class:
+</p>
+<pre>
+public class EmailAddress
+{
+    public string Value { get; private set; }
+}
+</pre>
+<p>
+    Add a static IsValid method that returns true if the given string is a valid email address:
+</p>
+<pre>
+using System.Text.RegularExpressions;
+
+public class EmailAddress
+{
+    public string Value { get; private set; }
+
+    public static bool IsValid(string emailAddress)
+    {
+        return Regex.IsMatch(emailAddress,
+            @"^(?("")("".+?(?&lt;!\\)""@)|(([0-9a-z]((\.(?!\.))|[-!#\$%&'\*\+/=\?\^`\{\}\|~\w])*)(?&lt;=[0-9a-z])@))" +
+            @"(?(\[)(\[(\d{1,3}\.){3}\d{1,3}\])|(([0-9a-z][-\w]*[0-9a-z]*\.)+[a-z0-9][\-a-z0-9]{0,22}[a-z0-9]))$",
+            RegexOptions.IgnoreCase);
+    }
+}
+</pre>
+<p>
+    Add the constructor. This takes a string with hopefully a valid email address.
+    If it isn't an email address, throw an exception.
+</p>
+
+<pre>
+using System.Text.RegularExpressions;
+
+public class EmailAddress
+{
+    public string Value { get; private set; }
+
+    public static bool IsValid(string emailAddress)
+    {
+        return Regex.IsMatch(emailAddress,
+            @"^(?("")("".+?(?&lt;!\\)""@)|(([0-9a-z]((\.(?!\.))|[-!#\$%&'\*\+/=\?\^`\{\}\|~\w])*)(?&lt;=[0-9a-z])@))" +
+            @"(?(\[)(\[(\d{1,3}\.){3}\d{1,3}\])|(([0-9a-z][-\w]*[0-9a-z]*\.)+[a-z0-9][\-a-z0-9]{0,22}[a-z0-9]))$",
+            RegexOptions.IgnoreCase);
+    }
+
+    public EmailAddress(string emailAddress)
+    {
+        if (!IsValid(emailAddress)) { throw new ArgumentException(string.Format("Invalid email address: {0}", emailAddress)); }
+        Value = emailAddress;
+    }
+}
+</pre>
+<p>
+    That gives us the basics. Note that with this implementation, an EmailAddress cannot be changed after it has been created - it is immutable.
+</p>
+<p>
+    However, there is one more thing to implement: equaility. When you use simple strings to store email addresses,
+    you expect them to be compared by value:
+</p>
+<pre>
+string emailAddress1 = "kjones@megacorp.com";
+string emailAddress2 = "kjones@megacorp.com";
+bool equal = (emailAddress1 == emailAddress2); // true
+</pre>
+
+<p>
+    Because of this, we'll want the same behaviour with EmailAddresses:
+</p>
+<pre>
+var emailAddress1 = new EmailAddress("kjones@megacorp.com");
+var emailAddress2 = new EmailAddress("kjones@megacorp.com");
+bool equal = (emailAddress1 == emailAddress2); // true
+</pre>
+
+<p>
+    Because EmailAddress is a 
+    <a href="http://msdn.microsoft.com/en-us/library/t63sy5hs.aspx" target="_blank">reference type</a>,
+    by default the equality operator only checks whether the two EmailAddresses are physically the same.
+    However, we want to compare the underlying email adresses.
+</p>
+<p>
+    To make this happen, we have to implement the System.IEquatable&lt;T> interface and override the
+    Object.Equals and Object.GetHashCode methods and the == and != operators
+    (<a href="http://msdn.microsoft.com/en-us/library/dd183755.aspx" target="_blank">full details</a>).
+    The result is this:
+</p>
+<pre>
+public class EmailAddress
+{
+    public string Value { get; private set; }
+
+    public EmailAddress(string emailAddress)
+    {
+        if (!IsValid(emailAddress)) { throw new ArgumentException(string.Format("Invalid email address: {0}", emailAddress)); }
+        Value = emailAddress;
+    }
+
+    public static bool IsValid(string emailAddress)
+    {
+        return Regex.IsMatch(emailAddress,
+            @"^(?("")("".+?(?&lt;!\\)""@)|(([0-9a-z]((\.(?!\.))|[-!#\$%&'\*\+/=\?\^`\{\}\|~\w])*)(?&lt;=[0-9a-z])@))" +
+            @"(?(\[)(\[(\d{1,3}\.){3}\d{1,3}\])|(([0-9a-z][-\w]*[0-9a-z]*\.)+[a-z0-9][\-a-z0-9]{0,22}[a-z0-9]))$",
+            RegexOptions.IgnoreCase);
+    }
+
+#region equality
+
+    public override bool Equals(Object obj)
+    {
+        //Check for null and compare run-time types. 
+        if ((obj == null) || (!(obj is EmailAddress)))
+        {
+            return false;
+        }
+
+        return (Value.Equals(((EmailAddress)obj).Value));
+    }
+
+    public override int GetHashCode()
+    {
+        return Value.GetHashCode();
+    }
+
+    public bool Equals(EmailAddress other)
+    {
+        if (other == null) { return false; }
+
+        return (Value.Equals(other.Value));
+    }
+
+    public static bool operator ==(EmailAddress a, EmailAddress b)
+    {
+        // If both are null, or both are same instance, return true.
+        if (System.Object.ReferenceEquals(a, b))
+        {
+            return true;
+        }
+
+        // If one is null, but not both, return false.
+        // Have to cast to object, otherwise you recursively call this == operator.
+        if (((object)a == null) || ((object)b == null))
+        {
+            return true;
+        }
+
+        // Return true if the fields match:
+        return a.Equals(b);
+    }
+
+    public static bool operator !=(EmailAddress a, EmailAddress b)
+    {
+        return !(a == b);
+    }
+
+#endregion
+}
+</pre>
 
 
 
