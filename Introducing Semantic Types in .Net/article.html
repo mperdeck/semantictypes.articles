@@ -373,7 +373,7 @@ public class EmailAddress : SemanticType&lt;string>
 
     // Constructor, taking an email address. The base constructor handles validation
     // and storage in the Value property.
-    public EmailAddress(string emailAddress) : base(IsValid, typeof(EmailAddress), emailAddress) { }
+    public EmailAddress(string emailAddress) : base(IsValid, emailAddress) { }
 }
 </pre>
 <p>
@@ -394,11 +394,6 @@ public class EmailAddress : SemanticType&lt;string>
         It is the SemanticType constructor that stores the value, so it needs to know how to validate it.
         To make that happen, simply pass the IsValid method as a parameter.
         If no validation is needed, pass in null.
-    </li>
-    <li>
-        If the value is invalid, the SemanticType constructor throws an exception. It would be nice
-        to mention the type that was going to be instantiated (in this case EmailAddress) in the exception.
-        To make that happen, pass in the type of the derived class.
     </li>
 </ul>
 
@@ -425,7 +420,7 @@ public class BirthDate : SemanticType&lt;DateTime&gt;
         return (age.TotalDays &gt;= 0) && (age.TotalDays &lt; daysPerYear * maxAgeForHumans);
     }
 
-    public BirthDate(DateTime birthDate) : base(IsValid, typeof(BirthDate), birthDate) { }
+    public BirthDate(DateTime birthDate) : base(IsValid, birthDate) { }
 }
 </pre>
 
@@ -468,7 +463,7 @@ public class SemanticType&lt;T>
     static method that was passed in via the isValidLambda parameter to do the validation.
     </li>
 <li>
-    It uses the type of the derived class (passed in via parameter derivedType) to create a more meaningful
+    It uses the type of the derived class, retrieved with this.GetType(), to create a more meaningful
     exception message.
 </li>
 </ul>
@@ -478,16 +473,16 @@ public class SemanticType&lt;T>
 {
     public T Value { get; private set; }
 
-    <b>protected SemanticType(Func&lt;T, bool&gt; isValidLambda, Type derivedType, T value)
+    <b>protected SemanticType(Func&lt;T, bool&gt; isValidLambda, T value)
     {
         if ((Object)value == null)
         {
-            throw new ArgumentException(string.Format("Trying to use null as the value of a {0}", derivedType));
+            throw new ArgumentException(string.Format("Trying to use null as the value of a {0}", this.GetType()));
         }
 
         if ((isValidLambda != null) && !isValidLambda(value))
         {
-            throw new ArgumentException(string.Format("Trying to set a {0} to {1} which is invalid", derivedType, value));
+            throw new ArgumentException(string.Format("Trying to set a {0} to {1} which is invalid", this.GetType(), value));
         }
 
         Value = value;
@@ -511,16 +506,16 @@ public class SemanticType&lt;T>
 {
     public T Value { get; private set; }
 
-    protected SemanticType(Func&lt;T, bool&gt; isValidLambda, Type derivedType, T value)
+    protected SemanticType(Func&lt;T, bool&gt; isValidLambda, T value)
     {
         if ((Object)value == null)
         {
-            throw new ArgumentException(string.Format("Trying to use null as the value of a {0}", derivedType));
+            throw new ArgumentException(string.Format("Trying to use null as the value of a {0}", this.GetType()));
         }
 
         if ((isValidLambda != null) && !isValidLambda(value))
         {
-            throw new ArgumentException(string.Format("Trying to set a {0} to {1} which is invalid", derivedType, value));
+            throw new ArgumentException(string.Format("Trying to set a {0} to {1} which is invalid", this.GetType(), value));
         }
 
         Value = value;
@@ -569,16 +564,16 @@ public class SemanticType&lt;T> : IEquatable&lt;SemanticType&lt;T&gt;&gt;
 {
     public T Value { get; private set; }
 
-    protected SemanticType(Func&lt;T, bool&gt; isValidLambda, Type derivedType, T value)
+    protected SemanticType(Func&lt;T, bool&gt; isValidLambda, T value)
     {
         if ((Object)value == null)
         {
-            throw new ArgumentException(string.Format("Trying to use null as the value of a {0}", derivedType));
+            throw new ArgumentException(string.Format("Trying to use null as the value of a {0}", this.GetType()));
         }
 
         if ((isValidLambda != null) && !isValidLambda(value))
         {
-            throw new ArgumentException(string.Format("Trying to set a {0} to {1} which is invalid", derivedType, value));
+            throw new ArgumentException(string.Format("Trying to set a {0} to {1} which is invalid", this.GetType(), value));
         }
 
         Value = value;
@@ -621,16 +616,16 @@ public class SemanticType&lt;T> : IEquatable&lt;SemanticType&lt;T&gt;&gt;
 {
     public T Value { get; private set; }
 
-    protected SemanticType(Func&lt;T, bool&gt; isValidLambda, Type derivedType, T value)
+    protected SemanticType(Func&lt;T, bool&gt; isValidLambda, T value)
     {
         if ((Object)value == null)
         {
-            throw new ArgumentException(string.Format("Trying to use null as the value of a {0}", derivedType));
+            throw new ArgumentException(string.Format("Trying to use null as the value of a {0}", this.GetType()));
         }
 
         if ((isValidLambda != null) && !isValidLambda(value))
         {
-            throw new ArgumentException(string.Format("Trying to set a {0} to {1} which is invalid", derivedType, value));
+            throw new ArgumentException(string.Format("Trying to set a {0} to {1} which is invalid", this.GetType(), value));
         }
 
         Value = value;
@@ -687,9 +682,32 @@ public class SemanticType&lt;T> : IEquatable&lt;SemanticType&lt;T&gt;&gt;
 
 <h3>IComparable and ToString</h3>
 
+<p>
+    Two more useful items to implement in SemanticType are:
+</p>
+<ul>
+    <li>
+    <a href="http://msdn.microsoft.com/en-us/library/system.icomparable(v=vs.110).aspx" target="_blank">IComparable</a> -
+        Tells .Net methods how to compare values such as EmailAddresses. Used by for example
+        <a href="http://msdn.microsoft.com/en-us/library/3da4abas(v=vs.110).aspx" target="_blank">List&lt;T&gt;.Sort</a>.
+        <p />
+    </li>
+<li>
+<a href="http://msdn.microsoft.com/en-us/library/system.object.tostring(v=vs.110).aspx" target="_blank">ToString</a> -
+    Implemented by every Object, that is, every single type in .Net, including value types such as int and double.
+    <p />
+    By default, this simply returns the name of the type. However, you'll want the string representation of the underlying value.
+    This isn't so useful for say EmailAddress where the underlying value is already a string, but when it is for example a DateTime, this comes in handy.
+</li>
 
-
-
+</ul>
+<p>
+   Implementing IComparable and ToString
+on SemanticType is very straight forward but a bit lengthy, so I haven't discussed it here.
+    To get the implementation, download the 
+<a href="http://www.nuget.org/packages/SemanticTypes/" target="_blank">Semantic Types Nuget package</a>
+    and look for the SemanticType class.
+</p>
 
 <h2>Conclusion</h2>
 <p>

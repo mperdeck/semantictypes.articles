@@ -7,16 +7,16 @@ namespace ArticleCode
     {
         public T Value { get; private set; }
 
-        protected SemanticType(Func<T, bool> isValidLambda, Type derivedType, T value)
+        protected SemanticType(Func<T, bool> isValidLambda, T value)
         {
             if ((Object)value == null)
             {
-                throw new ArgumentException(string.Format("Trying to use null as the value of a {0}", derivedType));
+                throw new ArgumentException(string.Format("Trying to use null as the value of a {0}", this.GetType()));
             }
 
             if ((isValidLambda != null) && !isValidLambda(value))
             {
-                throw new ArgumentException(string.Format("Trying to set a {0} to {1} which is invalid", derivedType, value));
+                throw new ArgumentException(string.Format("Trying to set a {0} to {1} which is invalid", this.GetType(), value));
             }
 
             Value = value;
@@ -71,7 +71,6 @@ namespace ArticleCode
     }
     
     
-    
     [TestClass]
     public class UnitTest2
     {
@@ -84,20 +83,66 @@ namespace ArticleCode
 
 namespace ArticleCode2
 {
-    public class SemanticType<T>
+    public class SemanticType<T> : IEquatable<SemanticType<T>>
     {
         public T Value { get; private set; }
 
-        protected SemanticType(Func<T, bool> isValidLambda, Type derivedType, T value)
+        protected SemanticType(Func<T, bool> isValidLambda, T value)
         {
             if ((Object)value == null)
             {
-                throw new ArgumentException(string.Format("Trying to use null as the value of a {0}", derivedType));
+                throw new ArgumentException(string.Format("Trying to use null as the value of a {0}", this.GetType()));
             }
 
             if ((isValidLambda != null) && !isValidLambda(value))
             {
-                throw new ArgumentException(string.Format("Trying to set a {0} to {1} which is invalid", derivedType, value));
+                throw new ArgumentException(string.Format("Trying to set a {0} to {1} which is invalid", this.GetType(), value));
+            }
+
+            Value = value;
+        }
+
+        public override bool Equals(Object obj)
+        {
+            //Check for null and compare run-time types. 
+            if (obj == null || obj.GetType() != this.GetType())
+            {
+                return false;
+            }
+
+            return (Value.Equals(((SemanticType<T>)obj).Value));
+        }
+
+        public override int GetHashCode()
+        {
+            return Value.GetHashCode();
+        }
+
+        public bool Equals(SemanticType<T> other)
+        {
+            if (other == null) { return false; }
+
+            return (Value.Equals(other.Value));
+        }
+    }
+}
+
+namespace ArticleCode3
+{
+    public class SemanticType<T>
+    {
+        public T Value { get; private set; }
+
+        protected SemanticType(Func<T, bool> isValidLambda, T value)
+        {
+            if ((Object)value == null)
+            {
+                throw new ArgumentException(string.Format("Trying to use null as the value of a {0}", this.GetType()));
+            }
+
+            if ((isValidLambda != null) && !isValidLambda(value))
+            {
+                throw new ArgumentException(string.Format("Trying to set a {0} to {1} which is invalid", this.GetType(), value));
             }
 
             Value = value;
@@ -121,33 +166,28 @@ namespace ArticleCode2
     }
 }
 
-namespace ArticleCode3
+
+namespace ArticleCode4
 {
     public class SemanticType<T>
     {
         public T Value { get; private set; }
 
-        protected SemanticType(Func<T, bool> isValidLambda, Type derivedType, T value)
+        protected SemanticType(Func<T, bool> isValidLambda, T value)
         {
             if ((Object)value == null)
             {
-                throw new ArgumentException(string.Format("Trying to use null as the value of a {0}", derivedType));
+                throw new ArgumentException(string.Format("Trying to use null as the value of a {0}", this.GetType()));
             }
 
             if ((isValidLambda != null) && !isValidLambda(value))
             {
-                throw new ArgumentException(string.Format("Trying to set a {0} to {1} which is invalid", derivedType, value));
+                throw new ArgumentException(string.Format("Trying to set a {0} to {1} which is invalid", this.GetType(), value));
             }
 
             Value = value;
         }
     }
-
-}
-
-
-namespace ArticleCode4
-{
 }
 
 
