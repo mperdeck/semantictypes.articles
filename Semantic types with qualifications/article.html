@@ -1,0 +1,192 @@
+
+
+<h2>Introduction</h2>
+
+<p>
+    In the article
+    <a href="#############">Reduce bugs in your code with semantic types</a>
+    we saw how semantic types make it easier to write correct code.\
+</p>
+<p>
+    Instead of storing email addresses, zip codes, etc. in simple strings,
+    you introduce separate types, such as <i>EmailAddress</i>. That way, instead of relying on
+    variable names and inline comments, you get the compiler itself to ensure you're not 
+    assigning surnames to email addresses, and it lets you put validation right in the type itself.
+</p>
+<p>
+    However, sometimes a semantic type is really a family of types, that need to be further qualified.
+    This article shows where this comes into play and how qualification works.
+</p>
+
+<h2>Qualification by type</h2>
+
+<p>
+Take these two classes:
+</p>
+
+<pre>
+public class Author
+{
+    public int AuthorId { get; set; }
+    public string Name { get; set; }
+    public string Address { get; set; }
+}
+
+public class Book
+{
+    public int BookId { get; set; }
+    public string Title { get; set; }
+    public int AuthorId { get; set; }
+}
+</pre>
+
+<p>
+It describes an <i>Author</i> and a <i>Book</i>, each with their own ids.
+    And each Book carries the id of its author.
+    Lets assume they represent rows in the Author and Book tables in a SQL Server database.
+</p>
+
+<p>
+    One problem with these classes is the fact that the ids are of type int.
+Ids in SQL Server are always greater than 0, while values of type int can be 0 and even negative.
+    Additionally, we want to make it clear in the code when we're using a database id rather than any old int. 
+</p>
+
+<p>
+    As described in
+    <a href="#############">Reduce bugs in your code with semantic types</a>,
+    this can be fixed by introducing a semantic type for database ids:
+</p>
+
+<pre>
+public class DatabaseId : SemanticType&lt;int, DatabaseId&gt;
+{
+    // Database ids must be greater than 0.
+    static DatabaseId() { IsValid = v =&gt; v &gt; 0; }
+
+    public DatabaseId(int id) : base(id) { }
+}
+
+// Ids now use semantic type DatabaseId
+
+public class Book
+{
+    public <b>DatabaseId</b> BookId { get; set; }
+    public string Title { get; set; }
+    public <b>DatabaseId</b> AuthorId { get; set; }
+}
+
+public class Author
+{
+    public <b>DatabaseId</b> AuthorId { get; set; }
+    public string Name { get; set; }
+    public string Address { get; set; }
+}
+</pre>
+
+<p>
+    This isn't quite good enough though. 
+    It still allows you to assign a BookId to an AuthorId:
+</p>
+
+<pre>
+public DatabaseId getAuthorIdByName(string authorName)
+{
+    ...
+}
+
+public Book getBookByBookId(DatabaseId bookId)
+{
+    ...
+}
+
+DatabaseId unclearVariableName = getAuthorIdByName("Ernest Hemingway");
+
+// ... some code in some method far far away ...
+
+// Passing an author id to a method that expects a book id
+Book book = getBookByBookId(unclearVariableName);
+</pre>
+
+<p>
+
+    Although both AuthorId and BookId are database ids, 
+    you still can't mix them. They are of the same family, but they're not the same.
+</p>
+
+<p>
+    One way to solve this would be to create separate semantic types for 
+    AuthorId and BookId. But than you'd need to do that for every id
+    in your code base. That sounds laborious.
+</p>
+
+<p>
+    An easier alternative is to simply make DatabaseId generic and qualify it with a dummy type, 
+    like so:
+</p>
+
+<pre>
+public class DatabaseId<b>&lt;Q&gt;</b> : SemanticType&lt;int, DatabaseId<b>&lt;Q&gt;</b>&gt;
+{
+    // Database ids must be greater than 0.
+    static DatabaseId() { IsValid = v =&gt; v &gt; 0; }
+
+    public DatabaseId(int id) : base(id) { }
+}
+</pre>
+
+<p>
+    The type parameter Q is not actually used anywhere inside the DatabaseId type.
+    It is simply used to create different versions of DatabaseId, like so:
+</p>
+
+<pre>
+public class Book
+{
+    public DatabaseId<b>&lt;Book&gt;</b> BookId { get; set; }
+    public string Title { get; set; }
+    public DatabaseId<b>&lt;Author&gt;</b> AuthorId { get; set; }
+}
+
+public class Author
+{
+    public DatabaseId<b>&lt;Author&gt;</b> AuthorId { get; set; }
+    public string Name { get; set; }
+    public string Address { get; set; }
+}
+</pre>
+
+<p>
+    The compiler will not let us assign a 
+    DatabaseId&lt;Book&gt;
+        to a 
+    DatabaseId&lt;Author&gt;.
+    Essentially, by passing in different types to DatabaseId, we're telling the compiler to create different types, but without
+    having to create these types ourselves.
+</p>
+<p>
+    The faulty code now no longer compiles, providing immediate feedback about the problem:
+</p>
+<pre>
+
+public DatabaseId&lt;Author&gt; getAuthorIdByName(string authorName)
+{
+    ...
+}
+
+public Book getBookByBookId(DatabaseId&lt;Book&gt; bookId)
+{
+    ...
+}
+
+DatabaseId&lt;Author&gt; unclearVariableName = getAuthorIdByName("Ernest Hemingway");
+
+// ... some code in some method far far away ...
+
+// NO LONGER COMPILES, because trying to pass a DatabaseId&lt;Author&gt; to a DatabaseId&lt;Book&gt;
+Book book = getBookByBookId(unclearVariableName);
+</pre>
+
+
+
+

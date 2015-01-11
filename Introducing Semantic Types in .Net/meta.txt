@@ -1,0 +1,10 @@
+Introducing Semantic Types in .Net
+
+Semantic Types help you reduce bugs and improve maintainability by letting the compiler ensure consistency in your code. This article shows how this works and how to create Semantic Types with minimal overhead.
+
+
+
+
+
+
+
