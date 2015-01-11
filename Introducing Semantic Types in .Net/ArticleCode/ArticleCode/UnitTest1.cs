@@ -23,7 +23,7 @@ namespace ArticleCode
 
 
 
-    public class EmailAddress
+    public class EmailAddress : IEquatable<EmailAddress>
     {
         public string Value { get; private set; }
 
