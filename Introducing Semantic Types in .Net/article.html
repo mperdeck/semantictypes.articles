@@ -560,7 +560,7 @@ The difference between IEquatable.Equals and Object.Equals is that IEquatable.Eq
     </li>
 </ul>
 <pre>
-public class SemanticType&lt;T> : IEquatable&lt;SemanticType&lt;T&gt;&gt;
+public class SemanticType&lt;T> : <b>IEquatable&lt;SemanticType&lt;T&gt;&gt;</b>
 {
     public T Value { get; private set; }
 
