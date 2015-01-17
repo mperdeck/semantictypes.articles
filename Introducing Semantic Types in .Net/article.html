@@ -680,34 +680,120 @@ public class SemanticType&lt;T> : IEquatable&lt;SemanticType&lt;T&gt;&gt;
 }
 </pre>
 
-<h3>IComparable and ToString</h3>
-
+<h3>ToString</h3>
 <p>
-    Two more useful items to implement in SemanticType are:
-</p>
-<ul>
-    <li>
-    <a href="http://msdn.microsoft.com/en-us/library/system.icomparable(v=vs.110).aspx" target="_blank">IComparable</a> -
-        Tells .Net methods how to compare values such as EmailAddresses. Used by for example
-        <a href="http://msdn.microsoft.com/en-us/library/3da4abas(v=vs.110).aspx" target="_blank">List&lt;T&gt;.Sort</a>.
-        <p />
-    </li>
-<li>
-<a href="http://msdn.microsoft.com/en-us/library/system.object.tostring(v=vs.110).aspx" target="_blank">ToString</a> -
-    Implemented by every Object, that is, every single type in .Net, including value types such as int and double.
+<a href="http://msdn.microsoft.com/en-us/library/system.object.tostring(v=vs.110).aspx" target="_blank">ToString</a> 
+is
+    implemented by every Object, that is, every single type in .Net, including value types such as int and double.
     <p />
     By default, this simply returns the name of the type. However, you'll want the string representation of the underlying value.
     This isn't so useful for say EmailAddress where the underlying value is already a string, but when it is for example a DateTime, this comes in handy.
-</li>
-
-</ul>
-<p>
-   Implementing IComparable and ToString
-on SemanticType is very straight forward but a bit lengthy, so I haven't discussed it here.
-    To get the implementation, download the 
-<a href="http://www.nuget.org/packages/SemanticTypes/" target="_blank">Semantic Types Nuget package</a>
-    and look for the SemanticType class.
 </p>
+<p>
+    Implementing ToString is pretty trivial:
+</p>
+
+<pre>
+public class SemanticType&lt;T> : IEquatable&lt;SemanticType&lt;T&gt;&gt;
+{
+    ...
+
+    <b>public override string ToString()
+    {
+        return this.Value.ToString();
+    }</b>
+}
+</pre>
+
+<h3>IComparable</h3>
+<p>
+    Say you just converted your code to use EmailAddress for email addresses, rather than strings.
+    The issue is that strings can be ordered
+    with say
+    <a href="http://msdn.microsoft.com/en-us/library/6sh2ey19(v=vs.110).aspx" target="_blank">List&lt;T&gt;.Sort</a>
+     (a@abc.com comes before b@abc.com, etc.) However, out of the box, you can't do this with plain objects. 
+</p>
+<p>
+    The solution is that all .Net classes concerned with ordering objects check whether an object implements the
+    <a href="http://msdn.microsoft.com/en-us/library/4d7sx9hd(v=vs.110).aspx" target="_blank">IComparable&lt;T&gt;</a> interface.
+    To implement that interface, you have to add a
+    <a href="http://msdn.microsoft.com/en-us/library/43hc6wht(v=vs.110).aspx"  target="_blank">CompareTo</a>
+    method that compares the object with another object of the same class.
+</p>
+<p>
+    IComparable&lt;T&gt; has a non generic counterpart, <a href="http://msdn.microsoft.com/en-us/library/system.icomparable(v=vs.110).aspx" target="_blank">IComparable</a>.
+    This is a hang over from the dark and long past days when there were no generics.
+    I decided not to support this, because it goes against the idea of using strong typing to catch bugs at compile time.
+</p>
+
+<p>
+    Implementing IComparable&lt;T&gt; in SemanticType&lt;T&gt; is simple - just compare the underlying values:
+</p>
+
+<pre>
+// Does not compile
+public class SemanticType&lt;T> : IEquatable&lt;SemanticType&lt;T&gt;&gt;<b>, IComparable&lt;SemanticType&lt;T&gt;&gt;</b> 
+{
+    ...
+
+    <b>public int CompareTo(SemanticType&lt;T&gt; other)
+    {
+        if (other == null) { return 1; }
+        return this.Value.CompareTo(other.Value);
+    }</b>
+}
+</pre>
+
+<p>
+    There is one problem here: this code doesn't compile. The compiler hasn't been told that type T (the type of the underlying value)
+    actually implements CompareTo. There are a few options to fix this:
+</p>
+<ol>
+    <li>
+        Check at run time whether T implements IComparable&lt;T&gt; using 
+        <a href="http://msdn.microsoft.com/en-us/library/system.type.isassignablefrom(v=vs.110).aspx" target="_blank">Type.IsAssignableFrom</a>.
+        If it does, cast to IComparable&lt;T&gt;. If it doesn't, throw an exception.
+    </li>
+<li>
+    Add a 
+    <a href="http://msdn.microsoft.com/en-us/library/d5x73970.aspx" target="_blank">constraint</a>
+     on T to ensure it implements IComparable&lt;T&gt;.
+</li>
+</ol>
+
+<p>
+    Option 1 defers checking whether T  implements IComparable&lt;T&gt; to run time, while in option 2 this is done at compile time.
+    Option 2 is also a bit simpler.
+    This makes option 2 far preferable to me:
+</p>
+
+<pre>
+public class SemanticType&lt;T> : IEquatable&lt;SemanticType&lt;T&gt;&gt;, IComparable&lt;SemanticType&lt;T&gt;&gt; 
+    <b>where T: IComparable&lt;T&gt;</b>
+{
+    ...
+
+    <b>public int CompareTo(SemanticType&lt;T&gt; other)
+    {
+        if (other == null) { return 1; }
+        return this.Value.CompareTo(other.Value);
+    }</b>
+}
+</pre>
+<p>
+    What about the rare cases where the the underlying value does not implement IComparable&lt;T&gt;?
+    Maybe you want to wrap some legacy type into a semantic type.
+</p>
+<p>
+    To cater for this, in the
+    <a href="http://www.nuget.org/packages/SemanticTypes/" target="_blank">Semantic Types Nuget package</a>
+    I introduced a class 
+    UncomparableSemanticType&lt;T&gt; - a version of SemanticType&lt;T&gt; that does not implement
+    IComparable&lt;T&gt;. If you have a look at that code, you'll find that the common bits of these classes
+    have been factored out to a common base class.
+    Because this is pretty trivial, I haven't discussed that here.
+</p>
+
 
 <h2>Conclusion</h2>
 <p>
